@@ -1,39 +1,61 @@
-import { ApolloServer, gql } from "apollo-server-express";
-import { ApolloServerPluginDrainHttpServer } from "apollo-server-core";
-import http from "http";
+import { ApolloServer } from "apollo-server-express";
 import express from "express";
 import cors from "cors";
+import { gql } from "apollo-server-express";
 
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-const httpServer = http.createServer(app);
-
+// Define schema
 const typeDefs = gql`
   type Query {
     hello: String
   }
 `;
 
+// Define resolvers
 const resolvers = {
   Query: {
     hello: () => "world",
   },
 };
 
-const startApolloServer = async (app, httpServer) => {
-  const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
-  });
+// Server instance - will be reused between requests
+let apolloServer = null;
 
-  await server.start();
+// Initialize Apollo Server
+async function initializeApollo() {
+  if (!apolloServer) {
+    apolloServer = new ApolloServer({
+      typeDefs,
+      resolvers,
+      // Crucial for serverless:
+      introspection: true,
+    });
+    await apolloServer.start();
+  }
+  return apolloServer;
+}
+
+// Vercel serverless handler
+export default async function handler(req, res) {
+  // Setup express
+  const app = express();
+  app.use(cors());
+  app.use(express.json());
+
+  // Initialize Apollo
+  const server = await initializeApollo();
+
+  // Apply middleware to express
   server.applyMiddleware({ app });
-};
 
-startApolloServer(app, httpServer);
-
-export default httpServer;
+  // Handle the request with express
+  return new Promise((resolve, reject) => {
+    const expressHandler = app._router.handle.bind(app._router);
+    expressHandler(req, res, (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
