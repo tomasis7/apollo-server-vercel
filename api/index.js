@@ -4,36 +4,44 @@ import http from "http";
 import express from "express";
 import cors from "cors";
 
-const app = express();
+let apolloServer = null;
 
-app.use(cors());
-app.use(express.json());
+export default async function handler(req, res) {
+  const app = express();
+  app.use(cors());
+  app.use(express.json());
 
-const httpServer = http.createServer(app);
+  if (!apolloServer) {
+    const httpServer = http.createServer(app);
 
-const typeDefs = gql`
-  type Query {
-    hello: String
+    const typeDefs = gql`
+      type Query {
+        hello: String
+      }
+    `;
+
+    const resolvers = {
+      Query: {
+        hello: () => "world",
+      },
+    };
+
+    apolloServer = new ApolloServer({
+      typeDefs,
+      resolvers,
+      plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+    });
+
+    await apolloServer.start();
+    apolloServer.applyMiddleware({ app, path: "/" });
+  } else {
+    apolloServer.applyMiddleware({ app, path: "/" });
   }
-`;
 
-const resolvers = {
-  Query: {
-    hello: () => "world",
-  },
-};
-
-const startApolloServer = async (app, httpServer) => {
-  const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+  return new Promise((resolve) => {
+    const expressHandler = app._router.handle.bind(app._router);
+    expressHandler(req, res, () => {
+      resolve();
+    });
   });
-
-  await server.start();
-  server.applyMiddleware({ app });
-};
-
-startApolloServer(app, httpServer);
-
-export default httpServer;
+}
