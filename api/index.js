@@ -1,19 +1,18 @@
 import { ApolloServer, gql } from "apollo-server-express";
-import { ApolloServerPluginDrainHttpServer } from "apollo-server-core";
-import http from "http";
 import express from "express";
 import cors from "cors";
 
+// Keep Apollo Server instance
 let apolloServer = null;
 
 export default async function handler(req, res) {
+  // Setup Express
   const app = express();
   app.use(cors());
   app.use(express.json());
 
+  // Initialize Apollo Server if needed
   if (!apolloServer) {
-    const httpServer = http.createServer(app);
-
     const typeDefs = gql`
       type Query {
         hello: String
@@ -26,22 +25,19 @@ export default async function handler(req, res) {
       },
     };
 
+    // Create server with simplified config
     apolloServer = new ApolloServer({
       typeDefs,
       resolvers,
-      plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+      introspection: true, // Enable introspection for tools like Postman
     });
 
     await apolloServer.start();
-    apolloServer.applyMiddleware({ app, path: "/" });
-  } else {
-    apolloServer.applyMiddleware({ app, path: "/" });
   }
 
-  return new Promise((resolve) => {
-    const expressHandler = app._router.handle.bind(app._router);
-    expressHandler(req, res, () => {
-      resolve();
-    });
-  });
+  // Apply middleware every time
+  apolloServer.applyMiddleware({ app, path: "/", cors: false });
+
+  // Pass the request to Express
+  return app(req, res);
 }
